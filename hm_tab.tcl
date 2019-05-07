@@ -12,6 +12,7 @@ namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
 	variable m_rstfile "test.rst";
+	variable m_radius 10;
 }
 
 #################################################################
@@ -103,6 +104,7 @@ proc ::hm::MyTab::Main { args } {
 	
     variable m_recess;
     variable m_rstfile;
+	variable m_radius;
 	variable m_width 12;
     variable m_tree;
     variable m_pa;
@@ -118,11 +120,18 @@ proc ::hm::MyTab::Main { args } {
 				{{rst Files}       {.rst}        }
 				{{All Files}        *            }
 			}
-			hwtk::label $frame1.l -text "rst file:"
-			hwtk::openfileentry $frame1.e -textvariable [namespace current]::m_rstfile -filetypes $types_r -title "select result file" ;
-			grid $frame1.l $frame1.e -sticky w -pady 2 -padx 5
-			grid configure $frame1.e -sticky ew
+			hwtk::label $frame1.l1 -text "rst file:"
+			hwtk::openfileentry $frame1.e1 -textvariable [namespace current]::m_rstfile -filetypes $types_r -title "select result file" ;
+			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
+			grid configure $frame1.e1 -sticky ew
+			
+			hwtk::label $frame1.l2 -text "search radius:"
+			hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
+			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
+			grid configure $frame1.e2 -sticky ew
+			
 			grid columnconfigure $frame1 1  -weight 1
+			
 		# Create the frame2
 		set frame2 [frame $m_recess.frame2];
         pack $frame2 -side top -anchor nw -fill x ;
@@ -142,7 +151,7 @@ proc ::hm::MyTab::Main { args } {
         # Create the frame4
         set frame4 [frame $m_recess.frame4];
         pack $frame4 -side bottom -anchor nw -fill x;
-			button $frame4.close -text "Close" -width $m_width -command { ::hm::MyTab::TearDownWindow "after_deactivate" } 
+			button $frame4.close -text "Close" -width $m_width -command ::hm::MyTab::Close 
 			pack $frame4.close -side right
 		
 		::hm::MyTab::SetCallbacks;
@@ -152,13 +161,51 @@ proc ::hm::MyTab::Main { args } {
 }
 
 #################################################################
+proc ::hm::MyTab::Close { args } {
+	variable m_title;
+	
+	hm_framework removetab "$m_title";
+	TearDownWindow after_deactivate;
+}
+
+#################################################################
 proc ::hm::MyTab::SetTree { args } {
 	variable m_tree;
+	$m_tree element create entityimage image
+	$m_tree element create entityname str -editable 0
+	$m_tree element create elemid uint -editable 1 
+	$m_tree element create systemid uint -editable 0
+
+	$m_tree column create entities -text Entity -elements {entityimage entityname}
+	$m_tree column create id -text ID -sorttype integer -elements {elemid} -expand 0
+	$m_tree column create sysid -text System -elements {systemid} -expand 0
+
+	set m [hwtk::menu $m_tree.menu]
+	$m item create -caption "Create"
+	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::NewFolder } 
+	$m item sensor -parent create -caption "Sensor" -command { ::hm::MyTab::NewSensor } 
+	$m item edit -caption "Edit" -command "puts Edit"
+	$m item delete -caption "Delete" -command "puts Delete"
+	
+	$m_tree configure -menu $m
 }
 
 #################################################################
 proc ::hm::MyTab::SetPa { args } {
 	variable m_pa;
+}
+
+#################################################################
+proc ::hm::MyTab::NewSensor { args } {
+	variable m_tree;
+	set sel [ $m_tree select ]
+	
+	$m_tree item create -values [ list entityimage entitySensors-16.png entityname S1 elemid 1 systemid 1 ]
+}
+
+proc ::hm::MyTab::NewFolder { args } {
+	variable m_tree;
+	$m_tree item create -values [ list entityimage folderTags-16.png entityname F1 ]
 }
 
 #################################################################
