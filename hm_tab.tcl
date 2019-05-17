@@ -17,6 +17,14 @@ namespace eval ::hm::MyTab {
 }
 
 #################################################################
+proc ::hm::MyTab::Answer { question type } {
+	return [tk_messageBox \
+			-title "Question"\
+			-icon warning \
+			-message "$question" \
+			-type $type]
+}
+#################################################################
 proc ::hm::MyTab::DialogCreate { args } {
     # Purpose:  Creates the tab and the master frame
     # Args:
@@ -237,6 +245,7 @@ proc ::hm::MyTab::Main { args } {
     variable m_rstfile;
 	variable m_radius;
 	variable m_width 12;
+    variable m_split;
     variable m_tree;
     variable m_pa;
 	
@@ -279,12 +288,12 @@ proc ::hm::MyTab::Main { args } {
 		# Create the frame3
 		set frame3 [labelframe $m_recess.frame3 -text "Sensor" ];
 		pack $frame3 -side top -anchor nw -fill both -expand true;
-			set sf1 [hwtk::splitframe $frame3.sf1 -orient vertical -help "Expand/Collapse" ]
-			pack  $sf1 -fill both -expand true
-			set m_tree [hwtk::treectrl $sf1.tree -showroot no ]
-			set m_pa [ ::hwtk::pa::Area #auto $sf1.pa ] 
-			$sf1 add $sf1.tree
-			$sf1 add $sf1.pa
+			set m_split [hwtk::splitframe $frame3.sf1 -orient vertical -help "Expand/Collapse" ]
+			pack  $m_split -fill both -expand true
+			set m_tree [hwtk::treectrl $m_split.tree -showroot no ]
+			set m_pa [ ::hwtk::pa::Area #auto $m_split.pa ] 
+			$m_split add $m_split.tree
+			$m_split add $m_split.pa
         # Create the frame4
         set frame4 [frame $m_recess.frame4];
         pack $frame4 -side bottom -anchor nw -fill x;
@@ -308,9 +317,13 @@ proc ::hm::MyTab::Close { args } {
 #################################################################
 proc ::hm::MyTab::SetTree { args } {
 	variable m_tree;
-	variable m_gauge;
-	variable m_max_id 0;
-	set m_gauge {}
+	variable m_tree_root 0;
+	variable m_gauge {};
+	variable m_max_sensor_id 0;
+	variable m_sys_id {};
+	variable m_Folder_name {};
+	variable m_Folder_id {};
+	variable m_current_Folder 0;
 	
 	$m_tree element create entityimage image
 	$m_tree element create entityname str -editable 0
@@ -318,77 +331,198 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree element create systemid uint -editable 0
 	$m_tree element create elemid uint -editable 0 
 	$m_tree element create layer str -editable 0 
+	$m_tree element create type str -editable 0 
 	
 	$m_tree column create entities -text Entity -elements {entityimage entityname} -expand 0
-	$m_tree column create id -text Id -elements {id} -expand 0
-	$m_tree column create sysid -text SysId -elements {systemid} -expand 0
-	$m_tree column create eid -text Eid -elements {elemid} -expand 0
+	$m_tree column create id -text ID -elements {id} -expand 0
+	$m_tree column create sysid -text SysID -elements {systemid} -expand 0
+	$m_tree column create eid -text EID -elements {elemid} -expand 0
 	$m_tree column create layer -text Layer -elements {layer} -expand 0
+	$m_tree column create type -text Type -elements {type} -expand 0
 
 	set m [hwtk::menu $m_tree.menu]
 	$m item create -caption "Create" -command { ::hm::MyTab::Create } 
-	#~ $m item folder -parent create -caption "Folder" -command { ::hm::MyTab::NewFolder } 
-	#~ $m item sensor -parent create -caption "Sensor" -command { ::hm::MyTab::NewSensor } 
-	$m item edit -caption "Edit" -command "puts Edit"
-	$m item delete -caption "Delete" -command "puts Delete"
+	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::CreateFolder } 
+	$m item sensor -parent create -caption "Sensor" -command { ::hm::MyTab::CreateSensor } 
+	$m item edit -caption "Edit" -command {::hm::MyTab::Edit}
+	$m item delete -caption "Delete" -command {::hm::MyTab::Delete}
 	
 	$m_tree configure -menu $m
+	$m_tree configure -showroot yes
+	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges (0)" ]
+	ShowPA 0
 }
 
+#################################################################
+proc ::hm::MyTab::Edit { } {
+	
+}
+#################################################################
+proc ::hm::MyTab::Delete { } {
+	variable m_tree;
+	variable m_current_Folder;
+	variable m_Folder_id;
+	
+	set sl [ $m_tree select ];
+	set n [ llength $sl ]
+	
+}
+#################################################################
+proc ::hm::MyTab::ShowPA { show } {
+	variable m_pa;
+	variable m_split;
+	
+	if $show {
+		$m_split showpane $m_split.pa
+	} else {
+		$m_split hidepane $m_split.pa
+	}
+}
 #################################################################
 proc ::hm::MyTab::SetPa { args } {
 	variable m_pa;
 }
 
 #################################################################
-proc ::hm::MyTab::Create { args } {
-	variable m_tree;
+proc ::hm::MyTab::CreateFolder { args } {
+	
+	set name [ string trim [hm_getstring "Forder Name = " "Please specify the folder name"] ]
+	
+	if { $name == "" } { return 0 }
+	
+	return [ SetCurrentFolder [ NewFolder $name ] ]
+}
+#################################################################
+proc ::hm::MyTab::CreateSensor { args } {
 	variable m_radius;
 	variable m_gauge;
-	variable m_max_id;
+	variable m_current_Folder;
 	
 	if { $m_radius <= 0.0 } {
 		set m_radius 10.0
 	}
 	
+	if { $m_current_Folder == 0 } { SetCurrentFolder [ NewFolder "Gauges" ] }
+	
 	*createmarkpanel systems 1 "select systems..."
 	set allsystem [ hm_getmark systems 1 ]
 	
 	set alelem [list]
-	
+	set parent [ GetParent ]
+	set type single
 	foreach system_id $allsystem { 
-		puts "system -- $system_id"
-		set xyz [ hm_getvalue systems id=$system_id dataname=origin ]
-		foreach { x y z } $xyz {break};
-		set e_id [GetClosestElement $x $y $z $m_radius] 
-		if { $e_id == 0 } {
-			puts ">> No element was found within $m_radius of the origin of system-$system_id <<"
-			puts "   increace search radius and try again."
-			continue 
-        }
-		set e_c [ hm_entityinfo centroid elements $e_id ]
-		set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
-		set e_layer [ result_layer $e_id $system_id ]
-		lappend alelem $e_id
-		incr m_max_id
-		set tree_id [ NewSensor "S$m_max_id"  $m_max_id $system_id $e_id ]
-		dict set m_gauge $m_max_id [ dict create name "S$m_max_id" sysid $system_id eid $e_id axis $sys_axis layer $e_layer trid $tree_id ]
-		#~ puts "$system_id $e_id $e_c $sys_axis $e_layer"
+		puts "system -- $system_id $parent $type"
+		if [ set e_id [ AddSys $system_id $parent $type ] ] { lappend alelem $e_id } 
 	}
 	catch {
-	eval *createmark elements 1 $alelem
-	*numbersmark elements 1 1}
+		eval *createmark elements 1 $alelem
+		*numbersmark elements 1 1
+	}
+	
+	Update_Folder $parent
+	SetCurrentFolder $parent
 }
 
 #################################################################
-proc ::hm::MyTab::NewSensor { name id sysid eid } {
-	variable m_tree;	
-	$m_tree item create -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid ]
+proc ::hm::MyTab::AddSys { system_id parent type } {
+	variable m_radius;
+	variable m_gauge;
+	variable m_max_sensor_id;
+	variable m_sys_id;
+	
+	if [ dict exists $m_sys_id $system_id ] { return 0 }
+	
+	set xyz [ hm_getvalue systems id=$system_id dataname=origin ]
+	foreach { x y z } $xyz {break};
+	set e_id [GetClosestElement $x $y $z $m_radius] 
+	if { $e_id == 0 } {
+		puts ">> No element was found within $m_radius of the origin of system-$system_id <<"
+		puts "   increace search radius and try again."
+		return 0 
+	}
+	set e_c [ hm_entityinfo centroid elements $e_id ]
+	set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
+	set e_layer [ result_layer $e_id $system_id ]
+	
+	incr m_max_sensor_id
+	set tree_id [ NewSensor $parent "S$m_max_sensor_id"  $m_max_sensor_id $system_id $e_id $e_layer $type ]
+	dict set m_gauge $m_max_sensor_id [ dict create name "S$m_max_sensor_id" sysid $system_id eid $e_id axis $sys_axis layer $e_layer type $type trid $tree_id ]
+	
+	dict set m_sys_id $system_id $m_max_sensor_id
+	
+	return $e_id
 }
 
-proc ::hm::MyTab::NewFolder { args } {
+#################################################################
+proc ::hm::MyTab::GetParent { args } {
 	variable m_tree;
-	$m_tree item create -values [ list entityimage folderSensors-16.png entityname F1 ]
+	variable m_current_Folder;
+	variable m_Folder_id;
+	
+	set sl [ $m_tree select ];
+	set n [ llength $sl ]
+	
+	if { $n != 1 } { return $m_current_Folder } 
+	
+	if [ dict exists $m_Folder_id $sl ] {return $sl	} 
+	
+	return [ $m_tree item parent $sl ]
+}
+
+#################################################################
+proc ::hm::MyTab::NewSensor { parent name id sysid eid layer type } {
+	variable m_tree;
+	if { $layer == 1 } {
+		set tmp Top
+	} elseif { $layer ==-1 } {
+		set tmp Bottom
+	} else {
+		set tmp None
+	}
+	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $tmp type $type ] ]
+}
+
+proc ::hm::MyTab::NewFolder { name } {
+	variable m_tree;
+	variable m_Folder_name;
+	variable m_Folder_id;
+	
+	if [ dict exists $m_Folder_name $name ] { return 0 }
+	set tr_id [ $m_tree item create -values [ list entityimage folderSensors-16.png entityname "$name (0)" ] ]
+	dict set m_Folder_name $name $tr_id
+	dict set m_Folder_id $tr_id $name
+	return $tr_id
+}
+
+proc ::hm::MyTab::SetCurrentFolder { id } {
+	variable m_tree;
+	variable m_Folder_id;
+	variable m_current_Folder;
+	
+	if [ dict exists $m_Folder_id $id ] {
+		$m_tree item configure $m_current_Folder -fontweight normal
+		set m_current_Folder $id;
+		$m_tree item configure $m_current_Folder -fontweight bold
+	}
+	return $m_current_Folder
+}
+
+proc ::hm::MyTab::Update_Folder { id } {
+	variable m_tree;
+	variable m_tree_root;
+	variable m_Folder_id;
+	variable m_gauge;
+	
+	if [ dict exists $m_Folder_id $id ] {
+		set name [ dict get $m_Folder_id $id ]
+	} else { 
+		return
+	}
+	
+	set num [ llength [ $m_tree item children $id ] ]
+	set all [ dict size $m_gauge ]
+	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges ($all)" ]
+	$m_tree item configure $id -values [ list entityname "$name ($num)" ]
 }
 
 #################################################################
