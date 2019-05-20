@@ -7,6 +7,9 @@
 #             names, IDs, types and values for a particular
 #             entity.
 #################################################################
+package require hwt;
+package require hwtk;
+
 catch {namespace delete ::hm::MyTab }
 
 namespace eval ::hm::MyTab {
@@ -20,7 +23,7 @@ namespace eval ::hm::MyTab {
 proc ::hm::MyTab::Answer { question type } {
 	return [tk_messageBox \
 			-title "Question"\
-			-icon warning \
+			-icon info \
 			-message "$question" \
 			-type $type]
 }
@@ -260,13 +263,13 @@ proc ::hm::MyTab::Main { args } {
 				{{rst Files}       {.rst}        }
 				{{All Files}        *            }
 			}
-			hwtk::label $frame1.l1 -text "rst file:"
-			hwtk::openfileentry $frame1.e1 -textvariable [namespace current]::m_rstfile -filetypes $types_r -title "select result file" ;
+			::hwtk::label $frame1.l1 -text "rst file:"
+			::hwtk::openfileentry $frame1.e1 -textvariable [namespace current]::m_rstfile -filetypes $types_r -title "select result file" ;
 			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e1 -sticky ew
 			
-			hwtk::label $frame1.l2 -text "search radius:"
-			hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
+			::hwtk::label $frame1.l2 -text "search radius:"
+			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
 			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e2 -sticky ew
 			
@@ -288,9 +291,10 @@ proc ::hm::MyTab::Main { args } {
 		# Create the frame3
 		set frame3 [labelframe $m_recess.frame3 -text "Sensor" ];
 		pack $frame3 -side top -anchor nw -fill both -expand true;
-			set m_split [hwtk::splitframe $frame3.sf1 -orient vertical -help "Expand/Collapse" ]
+			#~ set m_split [::hwtk::splitframe $frame3.sf1 -orient vertical -help "Expand/Collapse" ]
+			set m_split [panedwindow  $frame3.sf1 -orient vertical ]
 			pack  $m_split -fill both -expand true
-			set m_tree [hwtk::treectrl $m_split.tree -showroot no ]
+			set m_tree [::hwtk::treectrl $m_split.tree -showroot no ]
 			set m_pa [ ::hwtk::pa::Area #auto $m_split.pa ] 
 			$m_split add $m_split.tree
 			$m_split add $m_split.pa
@@ -350,7 +354,10 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree configure -menu $m
 	$m_tree configure -showroot yes
 	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges (0)" ]
-	ShowPA 0
+	
+	#~ bind $m_tree <ButtonRelease-3> { tk_popup $::hm::MyTab::m_tree.menu %X %Y}
+	
+	HidePA 1
 }
 
 #################################################################
@@ -360,23 +367,72 @@ proc ::hm::MyTab::Edit { } {
 #################################################################
 proc ::hm::MyTab::Delete { } {
 	variable m_tree;
-	variable m_current_Folder;
 	variable m_Folder_id;
 	
 	set sl [ $m_tree select ];
-	set n [ llength $sl ]
+	set sensor {}
+	set folder {}
+	foreach item $sl {
+		if [ dict exists $m_Folder_id $item ] {
+			dict incr folder $item
+			set childs [ $m_tree item children $item ]
+			foreach child $childs {
+				dict incr sensor $child
+			}
+		} elseif { $item != 0} {
+			dict incr sensor $item
+		}
+	}
+	if [ dict size $folder] {
+		set ans [ Answer "Are you sure you want to delete the selected Folder(s)? \n All children entities will be also deleted." okcancel ]
+		if { $ans == "cancel" } { return }
+	} elseif [ dict size $sensor] {
+		set ans [ Answer "Are you sure you want to delete the selected item(s)?" yesno ]
+		if { $ans == "no" } { return }
+	}
 	
+	DeleteSensor [ dict keys $sensor]
+	DeleteFolder [ dict keys $folder]
+	Deep_Update_Folder	
 }
 #################################################################
-proc ::hm::MyTab::ShowPA { show } {
+proc ::hm::MyTab::DeleteSensor { items } {
+	variable m_tree;
+	variable m_gauge;
+	variable m_sys_id;
+	puts $items
+	foreach i $items {
+		set si [ dict get [ $m_tree item cget $i -values] id ]
+		dict unset m_sys_id [ dict get $m_gauge $si sysid ]
+		dict unset m_gauge $si
+		$m_tree item delete $i
+	}
+}
+
+proc ::hm::MyTab::DeleteFolder { items } {
+	variable m_tree;
+	variable m_Folder_id;
+	variable m_Folder_name;
+	
+	foreach i $items {
+		dict unset m_Folder_name [ dict get $m_Folder_id $i ]
+		dict unset m_Folder_id $i
+		$m_tree item delete $i
+	}
+}
+
+#################################################################
+proc ::hm::MyTab::HidePA { hide } {
 	variable m_pa;
 	variable m_split;
 	
-	if $show {
-		$m_split showpane $m_split.pa
-	} else {
-		$m_split hidepane $m_split.pa
-	}
+	#~ if $show {
+		#~ $m_split showpane $m_split.pa
+	#~ } else {
+		#~ $m_split hidepane $m_split.pa
+	#~ }
+	
+	$m_split paneconfigure $m_split.pa -hide $hide
 }
 #################################################################
 proc ::hm::MyTab::SetPa { args } {
@@ -409,7 +465,7 @@ proc ::hm::MyTab::CreateSensor { args } {
 	
 	set alelem [list]
 	set parent [ GetParent ]
-	set type single
+	set type 1
 	foreach system_id $allsystem { 
 		puts "system -- $system_id $parent $type"
 		if [ set e_id [ AddSys $system_id $parent $type ] ] { lappend alelem $e_id } 
@@ -473,13 +529,22 @@ proc ::hm::MyTab::GetParent { args } {
 proc ::hm::MyTab::NewSensor { parent name id sysid eid layer type } {
 	variable m_tree;
 	if { $layer == 1 } {
-		set tmp Top
+		set tmp_layer Top
 	} elseif { $layer ==-1 } {
-		set tmp Bottom
+		set tmp_layer Bottom
 	} else {
-		set tmp None
+		set tmp_layer None
 	}
-	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $tmp type $type ] ]
+	
+	if { $type == 1 } {
+		set tmp_type Single
+	} elseif  { $type == 3 } {
+		set tmp_type Rosette
+	} else {
+		set tmp_type None
+	}
+	
+	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $tmp_layer type $tmp_type ] ]
 }
 
 proc ::hm::MyTab::NewFolder { name } {
@@ -523,6 +588,31 @@ proc ::hm::MyTab::Update_Folder { id } {
 	set all [ dict size $m_gauge ]
 	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges ($all)" ]
 	$m_tree item configure $id -values [ list entityname "$name ($num)" ]
+}
+
+proc ::hm::MyTab::Deep_Update_Folder { } {
+	variable m_tree;
+	variable m_tree_root;
+	variable m_Folder_id;
+	variable m_gauge;	
+	variable m_current_Folder;
+	
+	set all [ dict size $m_gauge ]
+	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges ($all)" ]
+	
+	foreach item [ $m_tree item children $m_tree_root ] {
+		set name [ dict get $m_Folder_id $item ]
+		set num [ llength [ $m_tree item children $item ] ]
+		$m_tree item configure $item -values [ list entityname "$name ($num)" ]
+	}
+	
+	if [ dict exists $m_Folder_id $m_current_Folder ] { return }
+	set all [ $m_tree item children $m_tree_root ]
+	if { [llength $all] == 0 } { 
+		set m_current_Folder 0
+	} else {
+		set m_current_Folder [ lindex $all 0]
+	}
 }
 
 #################################################################
