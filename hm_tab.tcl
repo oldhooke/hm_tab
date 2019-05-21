@@ -291,7 +291,6 @@ proc ::hm::MyTab::Main { args } {
 		# Create the frame3
 		set frame3 [labelframe $m_recess.frame3 -text "Sensor" ];
 		pack $frame3 -side top -anchor nw -fill both -expand true;
-			#~ set m_split [::hwtk::splitframe $frame3.sf1 -orient vertical -help "Expand/Collapse" ]
 			set m_split [panedwindow  $frame3.sf1 -orient vertical ]
 			pack  $m_split -fill both -expand true
 			set m_tree [::hwtk::treectrl $m_split.tree -showroot no ]
@@ -306,7 +305,6 @@ proc ::hm::MyTab::Main { args } {
 		
 		::hm::MyTab::SetCallbacks;
 		::hm::MyTab::SetTree;
-		::hm::MyTab::SetPa;
     }
 }
 
@@ -343,56 +341,134 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree column create eid -text EID -elements {elemid} -expand 0
 	$m_tree column create layer -text Layer -elements {layer} -expand 0
 	$m_tree column create type -text Type -elements {type} -expand 0
-
+	
 	set m [hwtk::menu $m_tree.menu]
 	$m item create -caption "Create" -command { ::hm::MyTab::Create } 
 	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::CreateFolder } 
 	$m item sensor -parent create -caption "Sensor" -command { ::hm::MyTab::CreateSensor } 
-	$m item edit -caption "Edit" -command {::hm::MyTab::Edit}
-	$m item delete -caption "Delete" -command {::hm::MyTab::Delete}
+	$m item edit -caption "Edit" -command { ::hm::MyTab::Edit }
+	$m item delete -caption "Delete" -command { ::hm::MyTab::Delete }
 	
 	$m_tree configure -menu $m
 	$m_tree configure -showroot yes
+	$m_tree configure -selectcommand { ::hm::MyTab::Update_PA }
 	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges (0)" ]
 	
-	#~ bind $m_tree <ButtonRelease-3> { tk_popup $::hm::MyTab::m_tree.menu %X %Y}
+	bind $m_tree <Delete> { ::hm::MyTab::Delete }
 	
-	HidePA 1
+	HidePA 0
 }
 
 #################################################################
 proc ::hm::MyTab::Edit { } {
 	
 }
+
 #################################################################
-proc ::hm::MyTab::Delete { } {
+proc ::hm::MyTab::Update_PA { } {
+	variable m_selected_sensor;
+	variable m_selected_folder;
+	
+	GetSelected_direct
+	set n_f [ dict size $m_selected_folder]
+	set n_s [ dict size $m_selected_sensor]
+	
+	if { $n_f == 0 && $n_s>0 } {
+		ShowPA_Sensor
+	} elseif {$n_f == 1 && $n_s==0} {
+		ShowPA_Folder
+	} else {
+		ShowPA_None
+	}
+}
+
+proc ::hm::MyTab::ShowPA_Sensor {  } {
+	variable m_selected_sensor;
+	variable m_pa;
+	puts "sensor [ dict keys $m_selected_sensor]"
+}
+
+proc ::hm::MyTab::ShowPA_Folder {  } {
 	variable m_tree;
 	variable m_Folder_id;
+	variable m_selected_folder;
+	variable m_pa;
+	
+	$m_pa Clear
+	
+	set i [ dict keys $m_selected_folder]
+	
+	$m_pa AddProperty name str ""
+	$m_pa SetPropertyLabel name "Name"
+    $m_pa SetPropertyValue name [ dict get $m_Folder_id $i ]
+	
+}
+
+proc ::hm::MyTab::ShowPA_None { } {
+	variable m_pa;
+	$m_pa Clear
+}
+#################################################################
+proc ::hm::MyTab::GetSelected { } {
+	variable m_tree;
+	variable m_Folder_id;
+	variable m_selected_sensor;
+	variable m_selected_folder;
+	
+	set m_selected_sensor {}
+	set m_selected_folder {}
 	
 	set sl [ $m_tree select ];
-	set sensor {}
-	set folder {}
+	
 	foreach item $sl {
 		if [ dict exists $m_Folder_id $item ] {
-			dict incr folder $item
+			dict incr m_selected_folder $item
 			set childs [ $m_tree item children $item ]
 			foreach child $childs {
-				dict incr sensor $child
+				dict incr m_selected_sensor $child
 			}
 		} elseif { $item != 0} {
-			dict incr sensor $item
+			dict incr m_selected_sensor $item
 		}
 	}
-	if [ dict size $folder] {
+}
+#################################################################
+proc ::hm::MyTab::GetSelected_direct { } {
+	variable m_tree;
+	variable m_Folder_id;
+	variable m_selected_sensor;
+	variable m_selected_folder;
+	
+	set m_selected_sensor {}
+	set m_selected_folder {}
+	
+	set sl [ $m_tree select ];
+	
+	foreach item $sl {
+		if [ dict exists $m_Folder_id $item ] {
+			dict incr m_selected_folder $item
+		} elseif { $item != 0} {
+			dict incr m_selected_sensor $item
+		}
+	}
+}
+#################################################################
+proc ::hm::MyTab::Delete { } {
+	variable m_selected_sensor;
+	variable m_selected_folder;
+	
+	GetSelected
+	
+	if [ dict size $m_selected_folder] {
 		set ans [ Answer "Are you sure you want to delete the selected Folder(s)? \n All children entities will be also deleted." okcancel ]
 		if { $ans == "cancel" } { return }
-	} elseif [ dict size $sensor] {
+	} elseif [ dict size $m_selected_sensor] {
 		set ans [ Answer "Are you sure you want to delete the selected item(s)?" yesno ]
 		if { $ans == "no" } { return }
 	}
 	
-	DeleteSensor [ dict keys $sensor]
-	DeleteFolder [ dict keys $folder]
+	DeleteSensor [ dict keys $m_selected_sensor]
+	DeleteFolder [ dict keys $m_selected_folder]
 	Deep_Update_Folder	
 }
 #################################################################
@@ -400,7 +476,7 @@ proc ::hm::MyTab::DeleteSensor { items } {
 	variable m_tree;
 	variable m_gauge;
 	variable m_sys_id;
-	puts $items
+	
 	foreach i $items {
 		set si [ dict get [ $m_tree item cget $i -values] id ]
 		dict unset m_sys_id [ dict get $m_gauge $si sysid ]
@@ -426,17 +502,7 @@ proc ::hm::MyTab::HidePA { hide } {
 	variable m_pa;
 	variable m_split;
 	
-	#~ if $show {
-		#~ $m_split showpane $m_split.pa
-	#~ } else {
-		#~ $m_split hidepane $m_split.pa
-	#~ }
-	
 	$m_split paneconfigure $m_split.pa -hide $hide
-}
-#################################################################
-proc ::hm::MyTab::SetPa { args } {
-	variable m_pa;
 }
 
 #################################################################
