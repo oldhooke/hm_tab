@@ -111,15 +111,10 @@ proc ::hm::MyTab::ElementCentroid { args } {
 	*createmarkpanel elems 1 "Select Elements to create nodes at the centroid"
 	set elemlist [hm_getmark elems 1]
 	*clearmark elems 1
-	set ellistlength [llength $elemlist]
-
-	for {set i 0} {$i < $ellistlength} {incr i} {
-		set elemid [lindex $elemlist $i]
+	
+	foreach elemid $elemlist {
 		foreach {x y z} [hm_entityinfo centroid elems $elemid] {break};
 		eval *createnode $x $y $z 0 0 0
-		#~ *createmark nodes 1 -1
-		#~ set newnode [hm_getmark nodes 1]
-		#~ *clearmark nodes 1
 	}
 }
 #################################################################
@@ -230,9 +225,9 @@ proc ::hm::MyTab::result_layer { elem system } {
 	set sys_z [ hm_getvalue systems id=$system dataname=zaxis ]
 	set ans [ DotProduct $e_normal $sys_z ]
 	if { $ans < 0 } {
-		return -1
+		return "Bottom"
 	} else {
-		return 1
+		return "Top"
 	}
 }
 
@@ -295,8 +290,8 @@ proc ::hm::MyTab::Main { args } {
 			pack  $m_split -fill both -expand true
 			set m_tree [::hwtk::treectrl $m_split.tree -showroot no ]
 			set m_pa [ ::hwtk::pa::Area #auto $m_split.pa ] 
-			$m_split add $m_split.tree
-			$m_split add $m_split.pa
+			$m_split add $m_split.tree -stretch always 
+			$m_split add $m_split.pa -stretch never
         # Create the frame4
         set frame4 [frame $m_recess.frame4];
         pack $frame4 -side bottom -anchor nw -fill x;
@@ -334,6 +329,7 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree element create elemid uint -editable 0 
 	$m_tree element create layer str -editable 0 
 	$m_tree element create type str -editable 0 
+	$m_tree element create export intcheck -editable 1 
 	
 	$m_tree column create entities -text Entity -elements {entityimage entityname} -expand 0
 	$m_tree column create id -text ID -elements {id} -expand 0
@@ -341,13 +337,18 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree column create eid -text EID -elements {elemid} -expand 0
 	$m_tree column create layer -text Layer -elements {layer} -expand 0
 	$m_tree column create type -text Type -elements {type} -expand 0
+	$m_tree column create export -text Export -elements {export} -expand 0 -itemjustify right
 	
 	set m [hwtk::menu $m_tree.menu]
 	$m item create -caption "Create" -command { ::hm::MyTab::Create } 
 	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::CreateFolder } 
-	$m item sensor -parent create -caption "Sensor" -command { ::hm::MyTab::CreateSensor } 
+	$m item s_sensor -parent create -caption "Single" -command { ::hm::MyTab::CreateSensor "Single" } 
+	$m item r_sensor -parent create -caption "Rosette" -command { ::hm::MyTab::CreateSensor "Rosette" } 
 	$m item edit -caption "Edit" -command { ::hm::MyTab::Edit }
 	$m item delete -caption "Delete" -command { ::hm::MyTab::Delete }
+	$m item separator
+	$m item exportyes -caption "Set Export" -command { ::hm::MyTab::SetExport 1 }
+	$m item exportyno -caption "Set Do Not Export" -command { ::hm::MyTab::SetExport 0 }
 	
 	$m_tree configure -menu $m
 	$m_tree configure -showroot yes
@@ -365,6 +366,41 @@ proc ::hm::MyTab::Edit { } {
 }
 
 #################################################################
+proc ::hm::MyTab::AddProperty { prop type label value {flag true} { parent "" } } {
+	variable m_pa;
+	$m_pa AddProperty $prop $type $parent
+	$m_pa SetPropertyLabel $prop $label	
+    $m_pa SetPropertyValue $prop $value
+	$m_pa SetPropertyEnabled $prop $flag
+}
+
+proc ::hm::MyTab::GetSensorTypes { prop } {
+	return [ list Single Rosette ]
+}
+
+proc ::hm::MyTab::SetType { prop value } {
+	variable m_pa;
+	
+}
+
+proc ::hm::MyTab::SetFolderName { prop value } {
+	variable m_pa;
+	set name [ string trim $value]
+	
+	puts "set to $value"
+	
+}
+
+proc ::hm::MyTab::NameValidate { prop value } {
+	if [ regexp {^[a-zA-Z]+[0-9a-zA-Z_]*$} $value ] {
+		return true
+	} else {
+		return false
+	}	
+}
+
+
+#################################################################
 proc ::hm::MyTab::Update_PA { } {
 	variable m_selected_sensor;
 	variable m_selected_folder;
@@ -373,8 +409,10 @@ proc ::hm::MyTab::Update_PA { } {
 	set n_f [ dict size $m_selected_folder]
 	set n_s [ dict size $m_selected_sensor]
 	
-	if { $n_f == 0 && $n_s>0 } {
-		ShowPA_Sensor
+	if { $n_f == 0 && $n_s==1 } {
+		ShowPA_SingleSensor
+	} elseif {$n_f == 0 && $n_s>1} {
+		ShowPA_MultiSensor
 	} elseif {$n_f == 1 && $n_s==0} {
 		ShowPA_Folder
 	} else {
@@ -382,12 +420,56 @@ proc ::hm::MyTab::Update_PA { } {
 	}
 }
 
-proc ::hm::MyTab::ShowPA_Sensor {  } {
+proc ::hm::MyTab::ShowPA_SingleSensor {  } {
+	variable m_gauge;
+	variable m_tree;
 	variable m_selected_sensor;
 	variable m_pa;
-	puts "sensor [ dict keys $m_selected_sensor]"
+	variable m_layers;
+	
+	$m_pa Clear
+	
+	set i [ dict keys $m_selected_sensor]
+	set si [ dict get [ $m_tree item cget $i -values] id ]
+	set sysid [ dict get $m_gauge $si sysid ]
+	
+	AddProperty name str "Name"  [ dict get $m_gauge $si name ]
+	AddProperty id uint "ID"  $si false
+	
+	AddProperty type combobox "Type"  [ dict get $m_gauge $si type ] 
+	$m_pa SetPropertyValueListCallback type ::hm::MyTab::GetSensorTypes
+	$m_pa SetPropertyValueCallback type ::hm::MyTab::SetType
+	
+	AddProperty system uin "System"  $sysid
+	AddProperty xaxis str "xaxis" [ hm_getvalue systems id=$sysid dataname=xaxis ] false system
+	AddProperty yaxis str "yaxis" [ hm_getvalue systems id=$sysid dataname=yaxis ] false system
+	AddProperty zaxis str "zaxis" [ hm_getvalue systems id=$sysid dataname=zaxis ] false system
+	
+	AddProperty element uint "Element"  [ dict get $m_gauge $si eid ] false
+	AddProperty layer str  "Layer"  [ dict get $m_gauge $si layer ] false
 }
 
+proc ::hm::MyTab::ShowPA_MultiSensor {  } {
+	variable m_selected_sensor;
+	variable m_pa;
+	
+	$m_pa Clear
+	
+	set i [ dict keys $m_selected_sensor]
+	
+	AddProperty name str "Name" "###" false
+	AddProperty id uint "ID" "###" false
+	
+	AddProperty type combobox "Type"  "###"
+	$m_pa SetPropertyValueListCallback type ::hm::MyTab::GetSensorTypes
+	$m_pa SetPropertyValueCallback type ::hm::MyTab::SetType
+	
+	AddProperty system uin "System"  "###" false	
+	AddProperty element uint "Element"  "###" false
+	AddProperty layer str  "Layer" "###" false	
+}
+
+##############
 proc ::hm::MyTab::ShowPA_Folder {  } {
 	variable m_tree;
 	variable m_Folder_id;
@@ -398,10 +480,9 @@ proc ::hm::MyTab::ShowPA_Folder {  } {
 	
 	set i [ dict keys $m_selected_folder]
 	
-	$m_pa AddProperty name str ""
-	$m_pa SetPropertyLabel name "Name"
-    $m_pa SetPropertyValue name [ dict get $m_Folder_id $i ]
-	
+	AddProperty name str "Name"  [ dict get $m_Folder_id $i ]
+	$m_pa SetPropertyValueCallback name ::hm::MyTab::SetFolderName
+	$m_pa SetPropertyValidateCallback name ::hm::MyTab::NameValidate
 }
 
 proc ::hm::MyTab::ShowPA_None { } {
@@ -450,6 +531,17 @@ proc ::hm::MyTab::GetSelected_direct { } {
 		} elseif { $item != 0} {
 			dict incr m_selected_sensor $item
 		}
+	}
+}
+#################################################################
+proc ::hm::MyTab::SetExport { flag } {
+	variable m_selected_sensor;
+	variable m_tree;
+	
+	GetSelected
+	
+	dict for { k v } $m_selected_sensor {
+		$m_tree item configure $k -values [list export $flag]
 	}
 }
 #################################################################
@@ -515,7 +607,7 @@ proc ::hm::MyTab::CreateFolder { args } {
 	return [ SetCurrentFolder [ NewFolder $name ] ]
 }
 #################################################################
-proc ::hm::MyTab::CreateSensor { args } {
+proc ::hm::MyTab::CreateSensor { type } {
 	variable m_radius;
 	variable m_gauge;
 	variable m_current_Folder;
@@ -531,7 +623,7 @@ proc ::hm::MyTab::CreateSensor { args } {
 	
 	set alelem [list]
 	set parent [ GetParent ]
-	set type 1
+	#~ set type Single
 	foreach system_id $allsystem { 
 		puts "system -- $system_id $parent $type"
 		if [ set e_id [ AddSys $system_id $parent $type ] ] { lappend alelem $e_id } 
@@ -594,23 +686,23 @@ proc ::hm::MyTab::GetParent { args } {
 #################################################################
 proc ::hm::MyTab::NewSensor { parent name id sysid eid layer type } {
 	variable m_tree;
-	if { $layer == 1 } {
-		set tmp_layer Top
-	} elseif { $layer ==-1 } {
-		set tmp_layer Bottom
-	} else {
-		set tmp_layer None
-	}
+	#~ if { $layer == 1 } {
+		#~ set tmp_layer Top
+	#~ } elseif { $layer ==-1 } {
+		#~ set tmp_layer Bottom
+	#~ } else {
+		#~ set tmp_layer None
+	#~ }
 	
-	if { $type == 1 } {
-		set tmp_type Single
-	} elseif  { $type == 3 } {
-		set tmp_type Rosette
-	} else {
-		set tmp_type None
-	}
+	#~ if { $type == 1 } {
+		#~ set tmp_type Single
+	#~ } elseif  { $type == 3 } {
+		#~ set tmp_type Rosette
+	#~ } else {
+		#~ set tmp_type None
+	#~ }
 	
-	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $tmp_layer type $tmp_type ] ]
+	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $layer type $type export 1 ] ]
 }
 
 proc ::hm::MyTab::NewFolder { name } {
