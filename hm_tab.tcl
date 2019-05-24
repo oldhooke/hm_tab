@@ -26,7 +26,7 @@ proc ::hm::MyTab::Answer { question type } {
 }
 #################################################################
 proc ::hm::MyTab::ValidateName { name } {
-	return [ regexp {^[a-zA-Z]+[0-9a-zA-Z_]*$} $name ] 
+	return [ regexp {^[a-zA-Z]+[0-9a-zA-Z_-]*$} $name ] 
 }
 
 #################################################################
@@ -701,7 +701,7 @@ proc ::hm::MyTab::HidePA { hide } {
 proc ::hm::MyTab::CreateFolder { args } {
 	set input [ string map { " " "" } [hwtk::inputdialog -text "Enter name:" -x [winfo pointerx .] -y [winfo pointery .] ] ]
 	
-	if [ regexp {[a-zA-Z]+[0-9a-zA-Z_]*} $input name ] {
+	if [ regexp {[a-zA-Z]+[0-9a-zA-Z_-]*} $input name ] {
 		return [ SetCurrentFolder [ NewFolder $name ] ]
 	} else {
 		return 0
@@ -776,19 +776,19 @@ proc ::hm::MyTab::GetNewSensorName { id } {
 	variable m_gauge_name
 	
 	if [dict exists $m_gauge_name "S${id}"] {
-		set fmt [ format "S%d_\[1-9\]\*" $id]
+		set fmt [ format "S%d-\[1-9\]\*" $id]
 		set names [ dict keys $m_gauge_name $fmt ]
-		
+		puts $names
 		if { [ llength $names ] == 0 } {
-			return "S${id}_1"
+			return "S${id}-1"
 		} else {
 			set max 0
 			foreach item $names {
-				set i [lindex [ split $item "_" ] 1]
+				set i [lindex [ split $item "-" ] 1]
 				if { $max < $i } { set max $i }
 			}
 			
-			return "S${id}_[expr $max+1]"
+			return "S${id}-[expr $max+1]"
 		}
 	} else {
 		return "S${id}"
