@@ -2,10 +2,8 @@
 #################################################################
 # File      : hm_tab.tcl
 # Date      : June 7, 2007
-# Created by: Altair Engineering, Inc.
-# Purpose   : Creates a GUI to list all of the solver attributes
-#             names, IDs, types and values for a particular
-#             entity.
+# Created by: Liu Dongliang
+# Purpose   : Creates a GUI to help manage test gauges
 #################################################################
 package require hwt;
 package require hwtk;
@@ -350,12 +348,12 @@ proc ::hm::MyTab::SetTree { args } {
 	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::CreateFolder } 
 	$m item s_sensor -parent create -caption "Single" -command { ::hm::MyTab::CreateSensor "Single" } 
 	$m item r_sensor -parent create -caption "Rosette" -command { ::hm::MyTab::CreateSensor "Rosette" } 
+	$m item separator
+	$m item edit -caption "Move to" -command { ::hm::MyTab::MoveTo }
 	$m item delete -caption "Delete" -command { ::hm::MyTab::Delete }
 	$m item separator
 	$m item exportyes -caption "Set Export" -command { ::hm::MyTab::SetExport 1 }
 	$m item exportyno -caption "Set Do Not Export" -command { ::hm::MyTab::SetExport 0 }
-	$m item separator
-	$m item edit -caption "Move to" -command { ::hm::MyTab::MoveTo }
 	
 	$m_tree configure -menu $m
 	$m_tree configure -showroot yes
@@ -476,6 +474,8 @@ proc ::hm::MyTab::FolderNameValidate { prop value } {
 proc ::hm::MyTab::Update_PA { } {
 	variable m_selected_sensor;
 	variable m_selected_folder;
+	
+	HidePA 0
 	
 	GetSelected_direct
 	set n_f [ dict size $m_selected_folder]
@@ -614,11 +614,17 @@ proc ::hm::MyTab::GetSelected_direct { } {
 proc ::hm::MyTab::SetExport { flag } {
 	variable m_selected_sensor;
 	variable m_tree;
+	variable m_gauge;
 	
-	GetSelected
-	
-	dict for { k v } $m_selected_sensor {
-		$m_tree item configure $k -values [list export $flag]
+	if { [ set sl [ $m_tree select ] ] == 0 } {
+		dict for { k v } $m_gauge {
+			$m_tree item configure [dict get $v trid] -values [list export $flag]
+		}
+	} else {	
+		GetSelected		
+		dict for { k v } $m_selected_sensor {
+			$m_tree item configure $k -values [list export $flag]
+		}
 	}
 }
 #################################################################
@@ -669,15 +675,31 @@ proc ::hm::MyTab::DeleteFolder { items } {
 }
 #################################################################
 proc ::hm::MyTab::MoveTo { } {
+	variable m_tree;
 	variable m_selected_sensor;
+	variable m_Folder_name;
 	
 	GetSelected_direct
 	
 	set n_s [ dict size $m_selected_sensor]
 	
-	if { $n_s==0 } { retrun }
+	if { $n_s==0 } { return }
 	
-	
+	set pname [hwtk::inputdialog -inputtype combobox \
+								 -valuelistcommand "::hm::MyTab::ListFoldername" \
+								 -x [winfo pointerx .] \
+								 -y [winfo pointery .] ] 
+	if [dict exists $m_Folder_name $pname] { 
+		set p [ dict get $m_Folder_name $pname]
+		dict for { k v } $m_selected_sensor {
+			$m_tree item configure $k -parent $p
+		}
+	}
+}
+
+proc ::hm::MyTab::ListFoldername { } {
+	variable m_Folder_name;
+	return [dict keys $m_Folder_name]
 }
 
 #################################################################
@@ -690,8 +712,7 @@ proc ::hm::MyTab::HidePA { hide } {
 
 #################################################################
 proc ::hm::MyTab::CreateFolder { args } {
-	
-	set input [ string map { " " "" } [hm_getstring "Forder Name = " "Please specify the folder name"] ]
+	set input [ string map { " " "" } [hwtk::inputdialog -text "Enter name:" -x [winfo pointerx .] -y [winfo pointery .] ] ]
 	
 	if [ regexp {[a-zA-Z]+[0-9a-zA-Z_]*} $input name ] {
 		return [ SetCurrentFolder [ NewFolder $name ] ]
@@ -717,7 +738,6 @@ proc ::hm::MyTab::CreateSensor { type } {
 	set parent [ GetParent ]
 	
 	foreach system_id $allsystem { 
-		puts "system -- $system_id $parent $type"
 		if [ set e_id [ AddSys $system_id $parent $type ] ] { lappend alelem $e_id } 
 	}
 	catch {
