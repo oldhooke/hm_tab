@@ -13,7 +13,6 @@ catch {namespace delete ::hm::MyTab }
 namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
-	variable m_rstfile "test.rst";
 	variable m_radius 10;
 }
 
@@ -243,7 +242,6 @@ proc ::hm::MyTab::Main { args } {
     # Notes:
 	
     variable m_recess;
-    variable m_rstfile;
 	variable m_radius;
 	variable m_width 12;
     variable m_split;
@@ -255,17 +253,6 @@ proc ::hm::MyTab::Main { args } {
         # Create the frame1
         set frame1 [labelframe $m_recess.frame1 -text "Parameter" ];
         pack $frame1 -side top -anchor nw -fill x ;
-
-            # rst file
-			set types_r {
-				{{rst Files}       {.rst}        }
-				{{All Files}        *            }
-			}
-			::hwtk::label $frame1.l1 -text "rst file:"
-			::hwtk::openfileentry $frame1.e1 -textvariable [namespace current]::m_rstfile -filetypes $types_r -title "select result file" ;
-			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
-			grid configure $frame1.e1 -sticky ew
-			
 			::hwtk::label $frame1.l2 -text "search radius:"
 			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
 			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
