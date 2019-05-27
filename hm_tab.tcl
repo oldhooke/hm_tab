@@ -136,6 +136,35 @@ proc ::hm::MyTab::DotProduct {vector1 vector2} {
     return $dot
 }
 
+proc ::hm::MyTab::AddVector { vector1 vector2 } {
+    set a1 [lindex $vector1 0]
+    set a2 [lindex $vector1 1]
+    set a3 [lindex $vector1 2]
+    
+    set b1 [lindex $vector2 0]
+    set b2 [lindex $vector2 1]
+    set b3 [lindex $vector2 2]
+    
+    set c1 [expr $a1 + $b1]
+    set c2 [expr $a2 + $b2]
+    set c3 [expr $a3 + $b3]
+    
+    return [list $c1 $c2 $c3]
+}
+
+proc ::hm::MyTab::ScaleVector { vector1 alph } {
+    set a1 [lindex $vector1 0]
+    set a2 [lindex $vector1 1]
+    set a3 [lindex $vector1 2]
+    
+    set c1 [expr $a1 * $alph]
+    set c2 [expr $a2 * $alph]
+    set c3 [expr $a3 * $alph]
+    
+    return [list $c1 $c2 $c3]
+}
+
+#################################################################
 proc ::hm::MyTab::ClearMark {entity mark} {
 
     *clearmark $entity $mark
@@ -265,8 +294,8 @@ proc ::hm::MyTab::Main { args } {
         pack $frame2 -side top -anchor nw -fill x ;
 			button $frame2.open -text "Open" -width $m_width -command { puts "pressed - Open\n" } 
 			button $frame2.save -text "Save" -width $m_width -command { puts "pressed - Save\n" } 
-			button $frame2.import -text "Import" -width $m_width -command { puts "pressed - Import\n" } 
-			button $frame2.export -text "Export" -width $m_width -command { puts "pressed - Export\n" } 
+			button $frame2.import -text "Import" -width $m_width -command { ::hm::MyTab::Import } 
+			button $frame2.export -text "Export" -width $m_width -command { ::hm::MyTab::Export } 
 			button $frame2.centroid -text "Centroid" -width $m_width -command { ::hm::MyTab::ElementCentroid } 
 			button $frame2.system -text "System" -width $m_width -command { hm_pushpanel systems } 
 			grid $frame2.open $frame2.save 
@@ -297,6 +326,9 @@ proc ::hm::MyTab::Main { args } {
 #################################################################
 proc ::hm::MyTab::Close { args } {
 	variable m_title;
+	
+	set ans [ Answer "Are you sure you want to leave?" okcancel ]
+	if { $ans == "cancel" } { return }
 	
 	hm_framework removetab "$m_title";
 	TearDownWindow after_deactivate;
@@ -682,6 +714,8 @@ proc ::hm::MyTab::MoveTo { } {
 			$m_tree item configure $k -parent $p
 		}
 	}
+	
+	Deep_Update_Folder
 }
 
 proc ::hm::MyTab::ListFoldername { } {
@@ -709,15 +743,10 @@ proc ::hm::MyTab::CreateFolder { args } {
 }
 #################################################################
 proc ::hm::MyTab::CreateSensor { type } {
-	variable m_radius;
-	variable m_current_Folder;
 	
-	if { $m_radius <= 0.0 } {
-		set m_radius 10.0
-	}
-	
-	if { $m_current_Folder == 0 } { SetCurrentFolder [ NewFolder "Gauges" ] }
-	
+	##
+	set state [ hm_commandfilestate 0]
+	##
 	*createmarkpanel systems 1 "select systems..."
 	set allsystem [ hm_getmark systems 1 ]
 	
@@ -734,33 +763,47 @@ proc ::hm::MyTab::CreateSensor { type } {
 	
 	Update_Folder $parent
 	SetCurrentFolder $parent
+	##
+	hm_commandfilestate $state
+	##
 }
 
 #################################################################
-proc ::hm::MyTab::AddSys { system_id parent type } {
+proc ::hm::MyTab::FindElem { system_id } {
 	variable m_radius;
-	variable m_gauge;
-	variable m_gauge_name;
-	variable m_sys_id;
 	
-	if [ dict exists $m_sys_id $system_id ] { return 0 }
-	
+	if { $m_radius <= 0.0 } {
+		set m_radius 10.0
+	}
 	set xyz [ hm_getvalue systems id=$system_id dataname=origin ]
 	foreach { x y z } $xyz {break};
 	set e_id [GetClosestElement $x $y $z $m_radius] 
 	if { $e_id == 0 } {
 		puts ">> No element was found within $m_radius of the origin of system-$system_id <<"
 		puts "   increace search radius and try again."
-		return 0 
 	}
+	return $e_id
+}
+
+#################################################################
+proc ::hm::MyTab::AddSys { system_id parent type  {name ""} } {
+	variable m_gauge;
+	variable m_gauge_name;
+	variable m_sys_id;
+	
+	if [ dict exists $m_sys_id $system_id ] { return 0 }
+	
+	set e_id [FindElem $system_id] 
+	if { $e_id == 0 } {	return 0 }
+	
 	set e_c [ hm_entityinfo centroid elements $e_id ]
 	set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
 	set e_layer [ result_layer $e_id $system_id ]
 	
 	set id [GetNewSensorID]
-	set name [ GetNewSensorName $id ]
+	set name [ GetNewSensorName $id $name ]
 	set tree_id [ NewSensor $parent $name  $id $system_id $e_id $e_layer $type ]
-	dict set m_gauge $id [ dict create name $name sysid $system_id eid $e_id axis $sys_axis layer $e_layer type $type trid $tree_id ]
+	dict set m_gauge $id [ dict create name $name sysid $system_id eid $e_id e_c $e_c axis $sys_axis layer $e_layer type $type trid $tree_id ]
 	dict set m_gauge_name $name $id
 	dict set m_sys_id $system_id $id
 	
@@ -772,15 +815,17 @@ proc ::hm::MyTab::GetNewSensorID { } {
 	return [ expr [ eval ::tcl::mathfunc::max 0 0 [dict keys $m_gauge] ] +1 ]
 }
 
-proc ::hm::MyTab::GetNewSensorName { id } {
+proc ::hm::MyTab::GetNewSensorName { id {name ""} } {
 	variable m_gauge_name
 	
-	if [dict exists $m_gauge_name "S${id}"] {
-		set fmt [ format "S%d-\[1-9\]\*" $id]
+	if { $name == "" } { set name "S${id}" }
+	
+	if [dict exists $m_gauge_name $name] {
+		set fmt [ format "%s-\[1-9\]\*" $name]
 		set names [ dict keys $m_gauge_name $fmt ]
-		puts $names
+		
 		if { [ llength $names ] == 0 } {
-			return "S${id}-1"
+			return "${name}-1"
 		} else {
 			set max 0
 			foreach item $names {
@@ -788,10 +833,10 @@ proc ::hm::MyTab::GetNewSensorName { id } {
 				if { $max < $i } { set max $i }
 			}
 			
-			return "S${id}-[expr $max+1]"
+			return "${name}-[expr $max+1]"
 		}
 	} else {
-		return "S${id}"
+		return $name
 	}
 }
 
@@ -800,6 +845,8 @@ proc ::hm::MyTab::GetParent { args } {
 	variable m_tree;
 	variable m_current_Folder;
 	variable m_Folder_id;
+	
+	if { $m_current_Folder == 0 } { SetCurrentFolder [ NewFolder "Gauges" ] }
 	
 	set sl [ $m_tree select ];
 	set n [ llength $sl ]
@@ -885,6 +932,117 @@ proc ::hm::MyTab::Deep_Update_Folder { } {
 	} else {
 		set m_current_Folder [ lindex $all 0]
 	}
+}
+
+#################################################################
+proc ::hm::MyTab::Export { } {	
+	set types_r {
+		{{inp Files}       {.inp}        }
+		{{All Files}        *            }
+	}
+	set filename [ tk_getSaveFile -defaultextension "inp" -initialdir " " -filetypes $types_r -title "Export File as ..."]
+	if { $filename == "" } { return }
+	if [ catch { open "$filename" w} res1 ] {
+		puts "Cannot open $filename for write:$res1"
+		return
+	}
+	
+	WriteOut $res1
+	
+	catch {close $res1}
+	puts   "output : $filename"
+}
+
+proc ::hm::MyTab::IsExport { id } {
+	variable m_gauge;
+	variable m_tree;
+	
+	set treeid [ dict get $m_gauge $id trid]
+	set flag [ dict get [ $m_tree item cget $treeid -values] export ]
+	if { $flag=="checkboxOn-16.png"} {
+		return 1
+	} else {
+		return 0
+	}
+}
+
+proc ::hm::MyTab::WriteOut { outfile } {
+	variable m_tree;
+	variable m_gauge;
+	
+	dict for { k v } $m_gauge {
+		if [ IsExport $k] {
+			set name [ dict get $v name]
+			set eid [dict get $v eid]
+			set e_c [dict get $v e_c]
+			set axis [ dict get $v axis]
+			set layer [ dict get $v layer]
+			set type [ dict get $v type]
+			puts $outfile "$k $name $eid $e_c $axis $layer $type"
+		}
+	}
+}
+
+#################################################################
+proc ::hm::MyTab::Import { } {	
+	set types_r {
+		{{inp Files}       {.inp}        }
+		{{All Files}        *            }
+	}
+	set filename [ tk_getOpenFile -defaultextension "inp" -initialdir " " -filetypes $types_r -title "Import File ..."]
+	if { $filename == "" } { return }
+	if [ catch { open "$filename" r} res1 ] {
+		puts "Cannot open $filename for read:$res1"
+		return
+	}
+	
+	set state [ hm_commandfilestate 0]
+	ReadIn $res1
+	hm_commandfilestate $state
+	
+	catch {close $res1}
+}
+
+proc ::hm::MyTab::ReadIn { infile } {
+	variable m_tree;
+	variable m_gauge;
+	
+	set parent [ GetParent ]
+	
+	while { [gets $infile line] >0} {
+		set data [ split $line " " ]
+		set name [ lindex $data 1]
+		set e_c [ lrange $data 3 5]
+		set xaxis [ lrange $data 6 8]
+		set yaxis [ lrange $data 9 11]
+		set type [ lindex $data 16]
+		set sysid [ CreateSystem $e_c $xaxis $yaxis ]
+		
+		AddSys $sysid $parent $type $name
+	}
+	Update_Folder $parent
+	SetCurrentFolder $parent
+}
+
+proc ::hm::MyTab::CreateSystem { e_c axisx axisy } {
+	set n_c [ CreateNode $e_c]
+	set n_x [ CreateNode [ AddVector $e_c [ScaleVector $axisx 10] ] ]
+	set n_y [ CreateNode [ AddVector $e_c [ScaleVector $axisy 10] ] ]
+	*createmark nodes 1 $n_c
+	*systemcreate 1 0 $n_c x $n_x xy $n_y
+	return [TheLast systems]
+}
+
+proc ::hm::MyTab::CreateNode { pos } {
+	eval *createnode $pos 0 0 0
+	return [TheLast nodes]
+}
+
+proc ::hm::MyTab::TheLast { type } {
+	*createmark $type 1 -1
+	set id [ hm_getmark $type 1]
+	*clearmark $type 1
+	return $id
 }
 
 #################################################################
