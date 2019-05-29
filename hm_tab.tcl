@@ -14,6 +14,7 @@ namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
 	variable m_radius 10;
+	variable m_file ""
 }
 
 #################################################################
@@ -95,7 +96,10 @@ proc ::hm::MyTab::SetCallbacks { args } {
     # Returns:
     # Notes:
 
-    #~ ::hwt::AddCallback *templatefileset ::hm::MyTab::GetAttribs;
+    ::hwt::AddCallback *readfile ::hm::MyTab::New;
+    ::hwt::AddCallback *deletemodel ::hm::MyTab::New;
+	
+    ::hwt::AddCallback *deletemark ::hm::MyTab::RemoveSystem before
 }
 
 #################################################################
@@ -105,7 +109,10 @@ proc ::hm::MyTab::UnsetCallbacks { args } {
     # Returns:
     # Notes:
 
-    #~ ::hwt::RemoveCallback *templatefileset ::hm::MyTab::GetAttribs;
+    ::hwt::RemoveCallback *readfile ::hm::MyTab::New;
+    ::hwt::RemoveCallback *deletemodel ::hm::MyTab::New;
+	
+    ::hwt::RemoveCallback *deletemark ::hm::MyTab::RemoveSystem;
 }
 
 #################################################################
@@ -280,7 +287,7 @@ proc ::hm::MyTab::Main { args } {
     # Create the GUI
     if [::hm::MyTab::DialogCreate] {
         # Create the frame1
-        set frame1 [labelframe $m_recess.frame1 -text "Parameter" ];
+		set frame1 [labelframe $m_recess.frame1 -text "Parameter" ];
         pack $frame1 -side top -anchor nw -fill x ;
 			::hwtk::label $frame1.l2 -text "search radius:"
 			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
@@ -292,15 +299,15 @@ proc ::hm::MyTab::Main { args } {
 		# Create the frame2
 		set frame2 [labelframe $m_recess.frame2 -text "Command" ];
         pack $frame2 -side top -anchor nw -fill x ;
-			button $frame2.open -text "Open" -width $m_width -command { puts "pressed - Open\n" } 
-			button $frame2.save -text "Save" -width $m_width -command { puts "pressed - Save\n" } 
-			button $frame2.import -text "Import" -width $m_width -command { ::hm::MyTab::Import } 
-			button $frame2.export -text "Export" -width $m_width -command { ::hm::MyTab::Export } 
-			button $frame2.centroid -text "Centroid" -width $m_width -command { ::hm::MyTab::ElementCentroid } 
-			button $frame2.system -text "System" -width $m_width -command { hm_pushpanel systems } 
-			grid $frame2.open $frame2.save 
-			grid $frame2.import $frame2.export 
-			grid $frame2.centroid $frame2.system 
+			::hwtk::toolbutton $frame2.new -image [hwtk::image cache fileNew-24.png] -help "New" -command { ::hm::MyTab::New } 
+			::hwtk::toolbutton $frame2.open -image [hwtk::image cache fileOpen-24.png] -help "Open" -command { ::hm::MyTab::Open } 
+			::hwtk::toolbutton $frame2.save -image [hwtk::image cache fileSave-24.png] -help "Save" -command { ::hm::MyTab::Save } 
+			::hwtk::toolbutton $frame2.saveas -image [hwtk::image cache fileSaveAs-24.png] -help "SaveAs" -command { ::hm::MyTab::SaveAs } 
+			::hwtk::toolbutton $frame2.import -image [hwtk::image cache fileImport-24.png] -help "Import" -command { ::hm::MyTab::Import } 
+			::hwtk::toolbutton $frame2.export -image [hwtk::image cache fileExport-24.png] -help "Export" -command { ::hm::MyTab::Export } 
+			::hwtk::toolbutton $frame2.centroid -image [hwtk::image cache entityNodes-24.png] -help "Centroid" -command { ::hm::MyTab::ElementCentroid } 
+			::hwtk::toolbutton $frame2.system -image [hwtk::image cache entitySystemsRectangular-24.png] -help "System" -command { hm_pushpanel systems } 
+			grid $frame2.new $frame2.open $frame2.save $frame2.saveas $frame2.import $frame2.export $frame2.centroid $frame2.system 
 			
 		# Create the frame3
 		set frame3 [labelframe $m_recess.frame3 -text "Sensor" ];
@@ -329,6 +336,15 @@ proc ::hm::MyTab::Close { args } {
 	
 	set ans [ Answer "Are you sure you want to leave?" okcancel ]
 	if { $ans == "cancel" } { return }
+	
+	hm_framework removetab "$m_title";
+	TearDownWindow after_deactivate;
+}
+
+proc ::hm::MyTab::Error { msg } {
+	variable m_title;
+	
+	set ans [ Answer "Error : $msg" ok ]
 	
 	hm_framework removetab "$m_title";
 	TearDownWindow after_deactivate;
@@ -368,7 +384,8 @@ proc ::hm::MyTab::SetTree { args } {
 	$m item s_sensor -parent create -caption "Single" -command { ::hm::MyTab::CreateSensor "Single" } 
 	$m item r_sensor -parent create -caption "Rosette" -command { ::hm::MyTab::CreateSensor "Rosette" } 
 	$m item separator
-	$m item edit -caption "Move to" -command { ::hm::MyTab::MoveTo }
+	$m item edit -caption "Move to..." -command { ::hm::MyTab::MoveTo }
+	$m item separator
 	$m item delete -caption "Delete" -command { ::hm::MyTab::Delete }
 	$m item separator
 	$m item exportyes -caption "Set Export" -command { ::hm::MyTab::SetExport 1 }
@@ -413,7 +430,6 @@ proc ::hm::MyTab::SetSensorType { prop value } {
 proc ::hm::MyTab::SetSensorID { prop value } {
 	variable m_gauge;
 	variable m_gauge_name;
-	variable m_sys_id;
 	variable m_tree;
 	variable m_selected_sensor;
 	
@@ -421,7 +437,6 @@ proc ::hm::MyTab::SetSensorID { prop value } {
 	set si [ dict get [ $m_tree item cget $i -values] id ]
 	
 	dict set m_gauge_name [ dict get $m_gauge $si name] $value
-	dict set m_sys_id [ dict get $m_gauge $si sysid] $value
 	dict set m_gauge $value [ dict get $m_gauge $si ]
 	dict unset m_gauge $si
 	
@@ -736,19 +751,22 @@ proc ::hm::MyTab::CreateFolder { args } {
 	set input [ string map { " " "" } [hwtk::inputdialog -text "Enter name:" -x [winfo pointerx .] -y [winfo pointery .] ] ]
 	
 	if [ regexp {[a-zA-Z]+[0-9a-zA-Z_-]*} $input name ] {
-		return [ SetCurrentFolder [ NewFolder $name ] ]
+		return [ NewFolder $name ]
 	} else {
 		return 0
 	}
 }
+
 #################################################################
 proc ::hm::MyTab::CreateSensor { type } {
 	
 	##
 	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
 	##
 	*createmarkpanel systems 1 "select systems..."
 	set allsystem [ hm_getmark systems 1 ]
+	*clearmark systems 1
 	
 	set alelem [list]
 	set parent [ GetParent ]
@@ -764,6 +782,7 @@ proc ::hm::MyTab::CreateSensor { type } {
 	Update_Folder $parent
 	SetCurrentFolder $parent
 	##
+	hm_blockmessages 0
 	hm_commandfilestate $state
 	##
 }
@@ -779,7 +798,7 @@ proc ::hm::MyTab::FindElem { system_id } {
 	foreach { x y z } $xyz {break};
 	set e_id [GetClosestElement $x $y $z $m_radius] 
 	if { $e_id == 0 } {
-		puts ">> No element was found within $m_radius of the origin of system-$system_id <<"
+		puts ">> No element was found within $m_radius units distance of the origin of system-$system_id <<"
 		puts "   increace search radius and try again."
 	}
 	return $e_id
@@ -787,8 +806,6 @@ proc ::hm::MyTab::FindElem { system_id } {
 
 #################################################################
 proc ::hm::MyTab::AddSys { system_id parent type  {name ""} } {
-	variable m_gauge;
-	variable m_gauge_name;
 	variable m_sys_id;
 	
 	if [ dict exists $m_sys_id $system_id ] { return 0 }
@@ -796,18 +813,31 @@ proc ::hm::MyTab::AddSys { system_id parent type  {name ""} } {
 	set e_id [FindElem $system_id] 
 	if { $e_id == 0 } {	return 0 }
 	
-	set e_c [ hm_entityinfo centroid elements $e_id ]
-	set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
 	set e_layer [ result_layer $e_id $system_id ]
-	
 	set id [GetNewSensorID]
 	set name [ GetNewSensorName $id $name ]
-	set tree_id [ NewSensor $parent $name  $id $system_id $e_id $e_layer $type ]
-	dict set m_gauge $id [ dict create name $name sysid $system_id eid $e_id e_c $e_c axis $sys_axis layer $e_layer type $type trid $tree_id ]
-	dict set m_gauge_name $name $id
-	dict set m_sys_id $system_id $id
+	
+	NewSensor $parent $name $id $system_id $e_id $e_layer $type 1
 	
 	return $e_id
+}
+
+proc ::hm::MyTab::NewSensor { parent name id system_id e_id e_layer type export } {
+	variable m_tree;
+	variable m_gauge;
+	variable m_gauge_name;
+	variable m_sys_id;
+	
+	set e_c [ hm_entityinfo centroid elements $e_id ]
+	set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
+	
+	set tree_id [ $m_tree item create \
+						-parent $parent \
+						-values [ list entityimage entitySensors-16.png entityname $name id $id systemid $system_id elemid $e_id layer $e_layer type $type export $export ] ]
+	
+	dict set m_gauge $id [ dict create name $name sysid $system_id eid $e_id e_c $e_c axis $sys_axis layer $e_layer type $type trid $tree_id ]
+	dict set m_gauge_name $name $id
+	dict set m_sys_id $system_id $tree_id
 }
 
 proc ::hm::MyTab::GetNewSensorID { } {
@@ -846,12 +876,12 @@ proc ::hm::MyTab::GetParent { args } {
 	variable m_current_Folder;
 	variable m_Folder_id;
 	
-	if { $m_current_Folder == 0 } { SetCurrentFolder [ NewFolder "Gauges" ] }
+	if { $m_current_Folder == 0 } { NewFolder "Gauges"  }
 	
 	set sl [ $m_tree select ];
 	set n [ llength $sl ]
 	
-	if { $n != 1 } { return $m_current_Folder } 
+	if { $n != 1 || $sl==0 } { return $m_current_Folder } 
 	
 	if [ dict exists $m_Folder_id $sl ] {return $sl	} 
 	
@@ -859,12 +889,6 @@ proc ::hm::MyTab::GetParent { args } {
 }
 
 #################################################################
-proc ::hm::MyTab::NewSensor { parent name id sysid eid layer type } {
-	variable m_tree;
-	
-	return [ $m_tree item create -parent $parent -values [ list entityimage entitySensors-16.png entityname $name id $id systemid $sysid elemid $eid layer $layer type $type export 1 ] ]
-}
-
 proc ::hm::MyTab::NewFolder { name } {
 	variable m_tree;
 	variable m_Folder_name;
@@ -875,7 +899,8 @@ proc ::hm::MyTab::NewFolder { name } {
 	set tr_id [ $m_tree item create -values [ list entityimage folderSensors-16.png entityname "$name (0)" ] ]
 	dict set m_Folder_name $name $tr_id
 	dict set m_Folder_id $tr_id $name
-	return $tr_id
+	
+	return [ SetCurrentFolder $tr_id]
 }
 
 proc ::hm::MyTab::SetCurrentFolder { id } {
@@ -937,20 +962,20 @@ proc ::hm::MyTab::Deep_Update_Folder { } {
 #################################################################
 proc ::hm::MyTab::Export { } {	
 	set types_r {
-		{{inp Files}       {.inp}        }
+		{{gauge Files}      {.gauge}     }
 		{{All Files}        *            }
 	}
-	set filename [ tk_getSaveFile -defaultextension "inp" -initialdir " " -filetypes $types_r -title "Export File as ..."]
+	set filename [ tk_getSaveFile -defaultextension "gauge" -initialdir " " -filetypes $types_r -title "Export File as ..."]
 	if { $filename == "" } { return }
 	if [ catch { open "$filename" w} res1 ] {
 		puts "Cannot open $filename for write:$res1"
 		return
 	}
 	
-	WriteOut $res1
+	DoExport $res1
 	
 	catch {close $res1}
-	puts   "output : $filename"
+	puts   "Export : $filename"
 }
 
 proc ::hm::MyTab::IsExport { id } {
@@ -966,7 +991,7 @@ proc ::hm::MyTab::IsExport { id } {
 	}
 }
 
-proc ::hm::MyTab::WriteOut { outfile } {
+proc ::hm::MyTab::DoExport { outfile } {
 	variable m_tree;
 	variable m_gauge;
 	
@@ -986,24 +1011,34 @@ proc ::hm::MyTab::WriteOut { outfile } {
 #################################################################
 proc ::hm::MyTab::Import { } {	
 	set types_r {
-		{{inp Files}       {.inp}        }
+		{{gauge Files}      {.gauge}     }
 		{{All Files}        *            }
 	}
-	set filename [ tk_getOpenFile -defaultextension "inp" -initialdir " " -filetypes $types_r -title "Import File ..."]
-	if { $filename == "" } { return }
+	set filename [ tk_getOpenFile -defaultextension "gauge" -initialdir " " -filetypes $types_r -title "Import File ..."]
+	if { $filename == "" } { return 0}
 	if [ catch { open "$filename" r} res1 ] {
 		puts "Cannot open $filename for read:$res1"
-		return
+		return 0
 	}
 	
+	##
 	set state [ hm_commandfilestate 0]
-	ReadIn $res1
+	hm_blockmessages 1
+	##
+	
+	DoImport $res1
+	
+	##
+	hm_blockmessages 0
 	hm_commandfilestate $state
+	##
 	
 	catch {close $res1}
+	puts "Import : $filename"
+	return 1
 }
 
-proc ::hm::MyTab::ReadIn { infile } {
+proc ::hm::MyTab::DoImport { infile } {
 	variable m_tree;
 	variable m_gauge;
 	
@@ -1030,6 +1065,8 @@ proc ::hm::MyTab::CreateSystem { e_c axisx axisy } {
 	set n_y [ CreateNode [ AddVector $e_c [ScaleVector $axisy 10] ] ]
 	*createmark nodes 1 $n_c
 	*systemcreate 1 0 $n_c x $n_x xy $n_y
+	*createmark nodes 1 $n_c $n_x $n_y
+	*nodemarkcleartempmark 1
 	return [TheLast systems]
 }
 
@@ -1046,4 +1083,216 @@ proc ::hm::MyTab::TheLast { type } {
 }
 
 #################################################################
-::hm::MyTab::Main;
+proc ::hm::MyTab::Save { } {	
+	variable m_file
+	
+	if { $m_file == "" } {
+		return [SaveAs]
+	} else {
+		return [DoSave]
+	}
+}
+
+proc ::hm::MyTab::SaveAs { } {	
+	variable m_file
+	
+	set types_r {
+		{{project Files}    {.project}   }
+		{{All Files}        *            }
+	}
+	set filename [ tk_getSaveFile -defaultextension "project" -initialdir " " -filetypes $types_r -title "Save as ..."]
+	if { $filename == "" } { return 0 }
+	
+	set m_file $filename
+	return [DoSave]
+}
+
+proc ::hm::MyTab::DoSave { } {	
+	variable m_file
+	
+	if [ catch { open "$m_file" w} res1 ] {
+		puts "Cannot open $m_file for write:$res1"
+		return 0
+	}
+	
+	DoSaveWrite $res1
+	
+	catch {close $res1}
+	puts   "Saved : $m_file"
+	return 1
+}
+
+proc ::hm::MyTab::DoSaveWrite { outfile } {
+	variable m_tree;
+	variable m_Folder_id
+	
+	dict for { fid name } $m_Folder_id {
+		puts $outfile "entityimage folderSensors-16.png entityname $name"
+		foreach child [ $m_tree item children $fid] {
+			puts $outfile "[$m_tree item cget $child -values]"
+		}
+	}
+}
+#################################################################
+proc ::hm::MyTab::Open { } {
+	variable m_file
+	
+	if [NotEmpty] {
+		set ans [ Answer "Save what you have done?" yesnocancel ]
+		switch -- $ans { 
+			yes { Save }
+			cancel {return 0}
+		}
+	}
+	
+	set types_r {
+		{{project Files}    {.project}   }
+		{{All Files}        *            }
+	}
+	set filename [ tk_getOpenFile -defaultextension "project" -initialdir " " -filetypes $types_r -title "Open ..."]
+	if { $filename == "" } { return 0}
+	
+	set m_file $filename
+	
+	return [DoOpen]
+}
+
+proc ::hm::MyTab::NotEmpty { } {
+	variable m_Folder_id
+	return [dict size $m_Folder_id]
+}
+
+proc ::hm::MyTab::DoOpen { } {	
+	variable m_file
+	
+	if [ catch { open "$m_file" r} res1 ] {
+		puts "Cannot open $m_file for read:$res1"
+		return 0
+	}
+	
+	##
+	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
+	##
+	
+	DoOpenRead $res1
+	
+	##
+	hm_blockmessages 0
+	hm_commandfilestate $state
+	##
+	
+	catch {close $res1}
+	puts   "Open : $m_file"
+	return 1
+}
+
+proc ::hm::MyTab::DoOpenRead { infile } {
+	
+	Clear 
+	set failed 0
+	while { [gets $infile line] >0} {
+		if { [dict size $line] < 4} {
+			NewFolder [ dict get $line entityname]
+		} else {
+			set system_id [ dict get $line systemid]
+			set e_id [ dict get $line elemid]
+			set e_layer [ dict get $line layer]
+			if [BasicCheck $system_id $e_id $e_layer] {
+				set parent [ GetParent ]
+				set name [ dict get $line entityname]
+				set id [ dict get $line id]
+				set type [ dict get $line type]
+				set export [ string equal  [ dict get $line export]  "checkboxOn-16.png" ]
+				
+				NewSensor $parent $name $id $system_id $e_id $e_layer $type $export
+			} else {
+				incr failed
+			}
+		}
+	}
+	
+	Deep_Update_Folder
+	
+	if $failed {
+		Answer "There are $failed gauges failed to pass the basic check!\
+				\nPlease make sure that this .project file is consistent with your model." ok 
+	}
+}
+
+
+proc ::hm::MyTab::Clear { } {
+	variable m_tree;
+	variable m_tree_root;
+	variable m_Folder_id;
+	variable m_Folder_name;
+	variable m_current_Folder;
+	variable m_gauge;
+	variable m_gauge_name;
+	variable m_sys_id;
+	
+	set m_Folder_id {}
+	set m_Folder_name {}
+	set m_current_Folder 0
+	set m_gauge {}
+	set m_gauge_name {}
+	set m_sys_id {}
+	$m_tree item delete all
+	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges (0)" ]
+}
+
+proc ::hm::MyTab::BasicCheck { systemid eid layer } {
+	if [ catch { string equal [result_layer $eid $systemid] $layer } ans ] {
+		return 0
+	} else {
+		return $ans
+	}
+	
+}
+#################################################################
+proc ::hm::MyTab::New { args } {
+	variable m_file
+	#~ puts $args
+	if [NotEmpty] {
+		set ans [ Answer "Save what you have done?" yesnocancel ]
+		switch -- $ans { 
+			yes { 
+				if { ![Save] } {return 0}
+			}
+			cancel {return 0}
+		}
+	}
+	
+	Clear
+	set m_file ""
+	return 1
+ }
+#################################################################
+proc ::hm::MyTab::RemoveSystem { args } {
+	
+	set data [  split $args "(,)" ]
+	if { [lindex $data 1] == "systems" } {
+		set sys [ hm_getmark systems [lindex $data 2] ]
+		DeleteSensor [ getTreeID_by_sys $sys]
+		Deep_Update_Folder
+	} else {
+		return 0
+	}
+}
+
+proc ::hm::MyTab::getTreeID_by_sys { systems } {
+	variable m_sys_id;
+	
+	set treeid [ list]
+	foreach id $systems {
+		if [ dict exists $m_sys_id $id] {
+			lappend treeid [dict get $m_sys_id $id]
+		}
+	}
+	return $treeid
+}
+
+#################################################################
+if [ catch {::hm::MyTab::Main} err] {
+	::hm::MyTab::Error $err
+}
