@@ -14,6 +14,8 @@ namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
 	variable m_radius 10;
+	variable m_reviewsize 100;
+	variable m_InReview 0;
 	variable m_file ""
 }
 
@@ -279,6 +281,7 @@ proc ::hm::MyTab::Main { args } {
 	
     variable m_recess;
 	variable m_radius;
+	variable m_reviewsize;
 	variable m_width 12;
     variable m_split;
     variable m_tree;
@@ -289,8 +292,13 @@ proc ::hm::MyTab::Main { args } {
         # Create the frame1
 		set frame1 [labelframe $m_recess.frame1 -text "Parameter" ];
         pack $frame1 -side top -anchor nw -fill x ;
-			::hwtk::label $frame1.l2 -text "search radius:"
-			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_radius
+			::hwtk::label $frame1.l1 -text "search radius:"
+			::hwtk::entry $frame1.e1 -inputtype double -textvariable [namespace current]::m_radius
+			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
+			grid configure $frame1.e1 -sticky ew
+			
+			::hwtk::label $frame1.l2 -text "review window:"
+			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_reviewsize
 			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e2 -sticky ew
 			
@@ -397,8 +405,68 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree item configure $m_tree_root -values [ list entityname "All Gauges (0)" ]
 	
 	bind $m_tree <Delete> { ::hm::MyTab::Delete }
+	bind $m_tree <Key-q> { ::hm::MyTab::Review }
+	bind $m_tree <Key-Q> { ::hm::MyTab::Review }
 	
 	HidePA 0
+}
+
+#################################################################
+proc ::hm::MyTab::Review { } {
+	variable m_InReview;
+	
+	if $m_InReview {
+		##
+		set state [ hm_commandfilestate 0]
+		hm_blockmessages 1
+		##
+		*reviewclearall
+		##
+		hm_commandfilestate $state
+		hm_blockmessages 0
+		##
+		
+		set m_InReview 0
+		return
+	}
+	
+	GetSelected
+	
+	if [DoReview ] {
+		set m_InReview 1
+	}
+}
+
+proc ::hm::MyTab::DoReview { } {
+	variable m_tree;
+	variable m_reviewsize;
+	variable m_selected_sensor;
+	
+	if { [dict size $m_selected_sensor] ==0} { return 0}
+	
+	set elems [list]
+	dict for { k v} $m_selected_sensor {
+		lappend elems [ dict get [ $m_tree item cget $k -values] elemid ]
+	}
+	
+	##
+	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
+	##
+	
+	*clearmarkall 1
+	eval *createmark elems 1 $elems
+	*reviewentitybymark 1 6 1 0
+	if { [llength $elems]==1} {
+		set xyz [ hm_entityinfo centroid elems $elems]
+		eval *graphuserwindow_byXYZandR $xyz $m_reviewsize
+	}
+	
+	##
+	hm_commandfilestate $state
+	hm_blockmessages 0
+	##
+	return 1
 }
 
 #################################################################
@@ -508,12 +576,17 @@ proc ::hm::MyTab::FolderNameValidate { prop value } {
 proc ::hm::MyTab::Update_PA { } {
 	variable m_selected_sensor;
 	variable m_selected_folder;
+	variable m_InReview;
 	
 	HidePA 0
 	
 	GetSelected_direct
 	set n_f [ dict size $m_selected_folder]
 	set n_s [ dict size $m_selected_sensor]
+	
+	if {$m_InReview} {
+		DoReview 
+	}
 	
 	if { $n_f == 0 && $n_s==1 } {
 		ShowPA_SingleSensor
