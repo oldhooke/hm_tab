@@ -14,7 +14,7 @@ namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
 	variable m_radius 10;
-	variable m_reviewsize 100;
+	variable m_reviewrange 100;
 	variable m_InReview 0;
 	variable m_file ""
 }
@@ -281,7 +281,7 @@ proc ::hm::MyTab::Main { args } {
 	
     variable m_recess;
 	variable m_radius;
-	variable m_reviewsize;
+	variable m_reviewrange;
 	variable m_width 12;
     variable m_split;
     variable m_tree;
@@ -297,8 +297,8 @@ proc ::hm::MyTab::Main { args } {
 			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e1 -sticky ew
 			
-			::hwtk::label $frame1.l2 -text "review window:"
-			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_reviewsize
+			::hwtk::label $frame1.l2 -text "review range:"
+			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_reviewrange
 			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e2 -sticky ew
 			
@@ -439,14 +439,14 @@ proc ::hm::MyTab::Review { } {
 
 proc ::hm::MyTab::DoReview { } {
 	variable m_tree;
-	variable m_reviewsize;
+	variable m_reviewrange;
 	variable m_selected_sensor;
 	
 	if { [dict size $m_selected_sensor] ==0} { return 0}
 	
-	set elems [list]
+	set systems [list]
 	dict for { k v} $m_selected_sensor {
-		lappend elems [ dict get [ $m_tree item cget $k -values] elemid ]
+		lappend systems [ dict get [ $m_tree item cget $k -values] systemid ]
 	}
 	
 	##
@@ -455,11 +455,11 @@ proc ::hm::MyTab::DoReview { } {
 	##
 	
 	*clearmarkall 1
-	eval *createmark elems 1 $elems
-	*reviewentitybymark 1 6 1 0
-	if { [llength $elems]==1} {
-		set xyz [ hm_entityinfo centroid elems $elems]
-		eval *graphuserwindow_byXYZandR $xyz $m_reviewsize
+	eval *createmark systems 1 $systems
+	*reviewentitybymark 1 0 1 0
+	if { [llength $systems]==1} {
+		set xyz [hm_getvalue systems id=$systems dataname=origin]
+		eval *graphuserwindow_byXYZandR $xyz $m_reviewrange
 	}
 	
 	##
