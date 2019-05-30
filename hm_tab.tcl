@@ -361,6 +361,7 @@ proc ::hm::MyTab::Error { msg } {
 #################################################################
 proc ::hm::MyTab::SetTree { args } {
 	variable m_tree;
+	variable m_autofit 1;
 	variable m_tree_root 0;
 	variable m_gauge {};
 	variable m_gauge_name {};
@@ -398,6 +399,8 @@ proc ::hm::MyTab::SetTree { args } {
 	$m item separator
 	$m item exportyes -caption "Set Export" -command { ::hm::MyTab::SetExport 1 }
 	$m item exportyno -caption "Set Do Not Export" -command { ::hm::MyTab::SetExport 0 }
+	$m item separator
+	$m item autofit -caption "Auto Fit" -type checkbutton -variable [namespace current]::m_autofit
 	
 	$m_tree configure -menu $m
 	$m_tree configure -showroot yes
@@ -416,24 +419,14 @@ proc ::hm::MyTab::Review { } {
 	variable m_InReview;
 	
 	if $m_InReview {
-		##
-		set state [ hm_commandfilestate 0]
-		hm_blockmessages 1
-		##
-		*reviewclearall
-		##
-		hm_commandfilestate $state
-		hm_blockmessages 0
-		##
+		ClearReview	
+	} else {
+	
+		GetSelected
 		
-		set m_InReview 0
-		return
-	}
-	
-	GetSelected
-	
-	if [DoReview ] {
-		set m_InReview 1
+		if [DoReview ] {
+			set m_InReview 1
+		} 
 	}
 }
 
@@ -441,8 +434,12 @@ proc ::hm::MyTab::DoReview { } {
 	variable m_tree;
 	variable m_reviewrange;
 	variable m_selected_sensor;
+	variable m_autofit;
 	
-	if { [dict size $m_selected_sensor] ==0} { return 0}
+	if { [dict size $m_selected_sensor] ==0} { 
+		ClearReview
+		return 0
+	}
 	
 	set systems [list]
 	dict for { k v} $m_selected_sensor {
@@ -457,7 +454,7 @@ proc ::hm::MyTab::DoReview { } {
 	*clearmarkall 1
 	eval *createmark systems 1 $systems
 	*reviewentitybymark 1 0 1 0
-	if { [llength $systems]==1} {
+	if { $m_autofit && [llength $systems]==1} {
 		set xyz [hm_getvalue systems id=$systems dataname=origin]
 		eval *graphuserwindow_byXYZandR $xyz $m_reviewrange
 	}
@@ -467,6 +464,20 @@ proc ::hm::MyTab::DoReview { } {
 	hm_blockmessages 0
 	##
 	return 1
+}
+
+proc ::hm::MyTab::ClearReview { } {
+	variable m_InReview;
+	##
+	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
+	##
+	*reviewclearall
+	##
+	hm_commandfilestate $state
+	hm_blockmessages 0
+	##
+	set m_InReview 0
 }
 
 #################################################################
