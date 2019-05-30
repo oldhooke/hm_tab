@@ -361,7 +361,7 @@ proc ::hm::MyTab::Error { msg } {
 #################################################################
 proc ::hm::MyTab::SetTree { args } {
 	variable m_tree;
-	variable m_autofit 1;
+	variable m_autofit 0;
 	variable m_tree_root 0;
 	variable m_gauge {};
 	variable m_gauge_name {};
