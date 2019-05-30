@@ -315,7 +315,8 @@ proc ::hm::MyTab::Main { args } {
 			::hwtk::toolbutton $frame2.export -image [hwtk::image cache fileExport-24.png] -help "Export" -command { ::hm::MyTab::Export } 
 			::hwtk::toolbutton $frame2.centroid -image [hwtk::image cache entityNodes-24.png] -help "Centroid" -command { ::hm::MyTab::ElementCentroid } 
 			::hwtk::toolbutton $frame2.system -image [hwtk::image cache entitySystemsRectangular-24.png] -help "System" -command { hm_pushpanel systems } 
-			grid $frame2.new $frame2.open $frame2.save $frame2.saveas $frame2.import $frame2.export $frame2.centroid $frame2.system 
+			::hwtk::toolbutton $frame2.select -image [hwtk::image cache select-24.png] -help "Select by system" -command { ::hm::MyTab::Select_by_system } 
+			grid $frame2.new $frame2.open $frame2.save $frame2.saveas $frame2.import $frame2.export $frame2.centroid $frame2.system $frame2.select
 			
 		# Create the frame3
 		set frame3 [labelframe $m_recess.frame3 -text "Sensor" ];
@@ -388,12 +389,14 @@ proc ::hm::MyTab::SetTree { args } {
 	$m_tree column create export -text Export -elements {export} -expand 0 -itemjustify right
 	
 	set m [hwtk::menu $m_tree.menu]
-	$m item create -caption "Create" -command { ::hm::MyTab::Create } 
+	$m item create -caption "Create"
 	$m item folder -parent create -caption "Folder" -command { ::hm::MyTab::CreateFolder } 
 	$m item s_sensor -parent create -caption "Single" -command { ::hm::MyTab::CreateSensor "Single" } 
 	$m item r_sensor -parent create -caption "Rosette" -command { ::hm::MyTab::CreateSensor "Rosette" } 
+	$m item change -caption "Change"
+	$m item change_sys -parent change -caption "System" -command { ::hm::MyTab::ChangeSystem } 
 	$m item separator
-	$m item edit -caption "Move to..." -command { ::hm::MyTab::MoveTo }
+	$m item moveto -caption "Move to..." -command { ::hm::MyTab::MoveTo }
 	$m item separator
 	$m item delete -caption "Delete" -command { ::hm::MyTab::Delete }
 	$m item separator
@@ -480,6 +483,29 @@ proc ::hm::MyTab::ClearReview { } {
 	set m_InReview 0
 }
 
+#################################################################
+proc ::hm::MyTab::Select_by_system { } {
+	variable m_tree;
+	variable m_sys_id;
+	##
+	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
+	##	
+	*createmarkpanel systems 1 "Select an system:";
+	set select_id [ hm_getmark systems 1 ]
+	*clearmark systems 1
+	##
+	hm_blockmessages 0
+	hm_commandfilestate $state
+	##	
+	$m_tree deselect all
+	if { [llength select_id] == 1 && [ dict exists $m_sys_id $select_id]  } {
+		set tree_id [ dict get $m_sys_id $select_id]
+		$m_tree expand [ $m_tree item cget $tree_id -parent]
+		$m_tree select $tree_id
+		$m_tree see $tree_id
+    }
+}
 #################################################################
 proc ::hm::MyTab::AddProperty { prop type label value {flag true} { parent "" } } {
 	variable m_pa;
@@ -635,7 +661,7 @@ proc ::hm::MyTab::ShowPA_SingleSensor {  } {
 	$m_pa SetPropertyValueListCallback type ::hm::MyTab::GetSensorTypes
 	$m_pa SetPropertyValueCallback type ::hm::MyTab::SetSensorType
 	
-	AddProperty system uin "System"  $sysid
+	AddProperty system uin "System"  $sysid false
 	AddProperty xaxis str "xaxis" [ hm_getvalue systems id=$sysid dataname=xaxis ] false system
 	AddProperty yaxis str "yaxis" [ hm_getvalue systems id=$sysid dataname=yaxis ] false system
 	AddProperty zaxis str "zaxis" [ hm_getvalue systems id=$sysid dataname=zaxis ] false system
@@ -828,6 +854,71 @@ proc ::hm::MyTab::HidePA { hide } {
 	variable m_split;
 	
 	$m_split paneconfigure $m_split.pa -hide $hide
+}
+
+#################################################################
+proc ::hm::MyTab::ChangeSystem { } {
+	variable m_selected_sensor;
+	
+	
+	GetSelected_direct	
+	set n_s [ dict size $m_selected_sensor]	
+	if { $n_s!=1 } { return }
+	
+	set tree_id [ dict keys $m_selected_sensor]
+	
+	##
+	set state [ hm_commandfilestate 0]
+	hm_blockmessages 1
+	##
+	*createmarkpanel systems 1 "Select an system:";
+	set select_id [ hm_getmark systems 1 ]
+	*clearmark systems 1
+	##
+	hm_blockmessages 0
+	hm_commandfilestate $state
+	##
+	
+	if { [llength select_id] != 1 } {
+        return;
+    }
+	
+	UpdateSystem $tree_id $select_id
+	Update_PA
+}
+
+proc ::hm::MyTab::UpdateSystem { tree_id system_id } {
+	variable m_tree;
+	variable m_sys_id;
+	variable m_gauge;
+	
+	if [ dict exists $m_sys_id $system_id ] { return 0 }
+	
+	set e_id [FindElem $system_id] 
+	if { $e_id == 0 } {	return 0 }
+	
+	set e_layer [ result_layer $e_id $system_id ]
+	
+	##sys_id
+	set old_value [$m_tree item cget $tree_id -values]
+	set old_sys [ dict get $old_value systemid ]
+	dict unset m_sys_id $old_sys
+	dict set m_sys_id $system_id $tree_id
+	## tree
+	$m_tree item configure $tree_id -values [list systemid $system_id elemid $e_id layer $e_layer]
+	
+	## gauge
+	set id [ dict get $old_value id ]
+	set e_c [ hm_entityinfo centroid elements $e_id ]
+	set sys_axis [ hm_getvalue systems id=$system_id dataname=axis ] 
+	
+	dict set m_gauge $id sysid $system_id
+	dict set m_gauge $id eid $e_id
+	dict set m_gauge $id e_c $e_c
+	dict set m_gauge $id axis $sys_axis
+	dict set m_gauge $id layer $e_layer
+	
+	puts "change system from $old_sys to $system_id"
 }
 
 #################################################################
