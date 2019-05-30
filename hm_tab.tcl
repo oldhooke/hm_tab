@@ -14,6 +14,7 @@ namespace eval ::hm::MyTab {
     variable m_title "MyTab";
 	variable m_recess ".m_MyTab";
 	variable m_radius 10;
+	variable m_normal_tol 1;
 	variable m_reviewrange 100;
 	variable m_InReview 0;
 	variable m_file ""
@@ -261,9 +262,16 @@ proc ::hm::MyTab::GetClosestElement {x y z r } {
 }
 
 proc ::hm::MyTab::result_layer { elem system } {
+	variable m_normal_tol;
+	
 	set e_normal [ GetElementNormal $elem ]
 	set sys_z [ hm_getvalue systems id=$system dataname=zaxis ]
 	set ans [ DotProduct $e_normal $sys_z ]
+	set angle [ expr 180.0*asin($ans)/asin(1.0)]
+	set diff [expr 90.0-abs($angle)]
+	if { $diff > $m_normal_tol } {
+		error "The angle between element(${elem}) normal and system(${system}) z-axis is ${diff}(>${m_normal_tol}) degree."
+	}
 	if { $ans < 0 } {
 		return "Bottom"
 	} else {
@@ -281,6 +289,7 @@ proc ::hm::MyTab::Main { args } {
 	
     variable m_recess;
 	variable m_radius;
+	variable m_normal_tol;
 	variable m_reviewrange;
 	variable m_width 12;
     variable m_split;
@@ -297,10 +306,15 @@ proc ::hm::MyTab::Main { args } {
 			grid $frame1.l1 $frame1.e1 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e1 -sticky ew
 			
-			::hwtk::label $frame1.l2 -text "review range:"
-			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_reviewrange
+			::hwtk::label $frame1.l2 -text "normal tol (deg):"
+			::hwtk::entry $frame1.e2 -inputtype double -textvariable [namespace current]::m_normal_tol
 			grid $frame1.l2 $frame1.e2 -sticky w -pady 2 -padx 5
 			grid configure $frame1.e2 -sticky ew
+			
+			::hwtk::label $frame1.l3 -text "review range:"
+			::hwtk::entry $frame1.e3 -inputtype double -textvariable [namespace current]::m_reviewrange
+			grid $frame1.l3 $frame1.e3 -sticky w -pady 2 -padx 5
+			grid configure $frame1.e3 -sticky ew
 			
 			grid columnconfigure $frame1 1  -weight 1
 			
@@ -897,7 +911,10 @@ proc ::hm::MyTab::UpdateSystem { tree_id system_id } {
 	set e_id [FindElem $system_id] 
 	if { $e_id == 0 } {	return 0 }
 	
-	set e_layer [ result_layer $e_id $system_id ]
+	if [ catch { set e_layer [ result_layer $e_id $system_id ] } err] {
+		puts $err
+		return 0
+	}
 	
 	##sys_id
 	set old_value [$m_tree item cget $tree_id -values]
@@ -988,7 +1005,10 @@ proc ::hm::MyTab::AddSys { system_id parent type  {name ""} } {
 	set e_id [FindElem $system_id] 
 	if { $e_id == 0 } {	return 0 }
 	
-	set e_layer [ result_layer $e_id $system_id ]
+	if [ catch {set e_layer [ result_layer $e_id $system_id ]} err] {
+		puts $err
+		return 0
+	}
 	set id [GetNewSensorID]
 	set name [ GetNewSensorName $id $name ]
 	
