@@ -681,6 +681,7 @@ proc ::hm::MyTab::ShowPA_SingleSensor {  } {
 	$m_pa SetPropertyValueCallback type ::hm::MyTab::SetSensorType
 	
 	AddProperty system uin "System"  $sysid false
+	AddProperty origin str "origin" [ hm_getvalue systems id=$sysid dataname=origin ] false system
 	AddProperty xaxis str "xaxis" [ hm_getvalue systems id=$sysid dataname=xaxis ] false system
 	AddProperty yaxis str "yaxis" [ hm_getvalue systems id=$sysid dataname=yaxis ] false system
 	AddProperty zaxis str "zaxis" [ hm_getvalue systems id=$sysid dataname=zaxis ] false system
