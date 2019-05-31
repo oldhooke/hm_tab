@@ -267,10 +267,15 @@ proc ::hm::MyTab::result_layer { elem system } {
 	set e_normal [ GetElementNormal $elem ]
 	set sys_z [ hm_getvalue systems id=$system dataname=zaxis ]
 	set ans [ DotProduct $e_normal $sys_z ]
-	set angle [ expr 180.0*asin($ans)/asin(1.0)]
-	set diff [expr 90.0-abs($angle)]
-	if { $diff > $m_normal_tol } {
-		error "The angle between element(${elem}) normal and system(${system}) z-axis is ${diff}(>${m_normal_tol}) degree."
+	if { $ans > 1.0 } { 
+		set ans 1.0
+	} elseif { $ans <-1.0 } {
+		set ans -1.0
+	}
+	set tol [ expr cos(0.01745329251994329576923690768489*$m_normal_tol)]
+	if { abs($ans) < abs($tol) } {
+		set angle [ expr 57.295779513082320876798154814105*acos( $ans )]
+		error [format "The angle between element(%d) normal and system(%d) z-axis is %f(>%f) degree." $elem $system $angle $m_normal_tol]
 	}
 	if { $ans < 0 } {
 		return "Bottom"
